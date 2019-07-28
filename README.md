@@ -1,2 +1,2 @@
-# lsh_mutual_information
+# Lsh Mutual Information - LSS-MI
 Use LSH Sampling for Mutual Information Estimation
