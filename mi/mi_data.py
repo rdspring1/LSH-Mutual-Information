@@ -55,10 +55,13 @@ def generate(d, mi, N, transform=None):
        y_tensor = np.power(np.matmul(y_tensor, transform), 3)
     return torch.from_numpy(x_tensor), torch.from_numpy(y_tensor)
 
-def mi_schedule(n_iter, value=4):
+def mi_schedule(n_iter, value=None):
     """Generate schedule for increasing correlation over time."""
     if value is None:
+        #mis = np.round(np.linspace(5.5-1e-9, 0.5, n_iter))*2.0
         mis = np.round(np.linspace(0.5, 5.5-1e-9, n_iter))*2.0
+        #mis = np.round(np.linspace(0.5, 2.5-1e-9, n_iter))*2.0
+        #mis = np.asarray([2] * (n_iter//2) + [8] * (n_iter//2))
     else:
         mis = np.asarray([value] * n_iter)
     return mis.astype(np.float32)

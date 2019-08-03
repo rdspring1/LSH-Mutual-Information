@@ -19,13 +19,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 num_iterations = 20000
-batch_size = 32
+batch_size = 10
 d = 20
 ed = 32
 device='cuda'
 
 estimators = {
-        #'IS': dict(mi_type=MI.IS, args=dict(desired_batch_size=4096)),
+        #'Uniform IS': dict(mi_type=MI.IS, args=dict(desired_batch_size=50000)),
         #'NWJ': dict(mi_type=MI.NWJ, args=None),
         #'TUBA': dict(mi_type=MI.TUBA, args=None),
         'NCE': dict(mi_type=MI.NCE, args=None),
@@ -36,7 +36,7 @@ def train(device, data, schedule, mi_type, args):
     model.to(device)
     model.train()
 
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=5e-4)
 
     xs, ys = data
     xs = xs.to(device)
@@ -103,12 +103,14 @@ axs = np.ravel(axs)
   
 for i, name in enumerate(names):
   plt.sca(axs[i])
-  plt.title(lnames[i])
+  #plt.title(lnames[i])
+  title = "{:s} - {:d}".format(lnames[i], batch_size)
+  plt.title(title)
 
   # Plot estimated MI and smoothed MI
   mis = estimates[name]  
   mis_smooth = pd.Series(mis).ewm(span=EMA_SPAN).mean()
-  p1 = plt.plot(mis, alpha=0.3)[0]
+  p1 = plt.plot(mis, alpha=0.3, color='k')[0]
   plt.plot(mis_smooth, c=p1.get_color())
 
   # Plot true MI and line for log(batch size)
@@ -131,9 +133,8 @@ for i, name in enumerate(names):
   plt.ylim(-1, 11)
   plt.xlim(0, num_iterations)
   if i == len(estimates) - ncols:
-    plt.xlabel('steps')
     plt.ylabel('Mutual information (nats)')
-plt.legend(loc='best', fontsize=8, framealpha=0.0)
+#plt.legend(loc='best', fontsize=8, framealpha=0.0)
 fig = plt.gcf()
 fig.savefig(sys.argv[1])
 plt.close()

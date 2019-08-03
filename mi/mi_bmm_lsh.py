@@ -45,29 +45,30 @@ class MI_Estimator(nn.Module):
 
         csim = self.cosine_similarity(scores.detach(), g.detach(), h.detach())
         p = 1. - torch.pow((1. - torch.pow(csim, args['k'])), args['l'])
-        masked_scores = torch.mul(scores, mask)
-        return self.importance_sampling(masked_scores, p, args['desired_batch_size'])
+        return self.importance_sampling(scores, mask, p, args['desired_batch_size'])
 
-    def my_log_softmax(self, scores, p):
+    def my_log_softmax(self, scores, mask, p):
         max_scores, max_indices = torch.max(scores, dim=-1, keepdim=True)
         scores -= max_scores
 
+        ps = scores[:,0]
+        eps = torch.unsqueeze(torch.exp(ps), dim=-1)
+
         eye = torch.zeros_like(scores)
         eye[:,0] = 1e38
-        ps = scores[:,0]
+        ns = scores - eye
+        ens = torch.exp(ns) / torch.clamp(p,1e-38, 1.)
+        ens = torch.mul(ens, mask)
 
-        ns = scores - eye 
-        eps = torch.unsqueeze(torch.exp(ps), dim=-1)
-        ens = torch.exp(ns) / (p + 1e-6)
-
+        # scores not present in lsh samples do not contribute to partition function
         partition = torch.sum(ens, dim=-1, keepdim=True) + eps
         return scores - torch.log(partition)
 
-    def importance_sampling(self, scores, p, desired_size):
+    def importance_sampling(self, scores, mask, p, desired_size):
         desired_size = torch.LongTensor([desired_size]).to(self.device)
         target = torch.LongTensor([0] * scores.size(0)).to(self.device)
         # use importance sampling to artifically increase batch size
-        smax = self.my_log_softmax(scores, p)
+        smax = self.my_log_softmax(scores, mask, p)
         # replace local batch size with desired batch size
         nll = -F.nll_loss(smax, target, reduction='mean')
         mi = torch.log(desired_size.float()) + nll

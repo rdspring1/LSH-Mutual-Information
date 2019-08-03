@@ -25,22 +25,27 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+batch_size = 100
 num_iterations = 20000
-mi_range = num_iterations // 1
-batch_size = 1
+total_size = num_iterations * batch_size
+mi_range = num_iterations // 5
+desired_size = 50000
+print("lsh size {:d} out of {:d}".format(desired_size, total_size))
+
 d = 20
 ed = 32
-K = 12
-L = 16 
+K = 10
+L = 10
 device='cuda'
 zerot = torch.zeros(1, d).to(device)
-onet = torch.ones(batch_size, 1).to(device)
+bs_zerot = torch.zeros(batch_size, 1).to(device)
+bs_onet = torch.ones(batch_size, 1).to(device)
 
 estimators = {
-        'LSH': dict(mi_type=MI.LSH, args=dict(desired_batch_size=num_iterations, k=K, l=L)),
+        'LSH IS': dict(mi_type=MI.LSH, args=dict(desired_batch_size=desired_size, k=K, l=L)),
         }
 
-def build(lsh, model, xs, bs=100):
+def build(lsh, model, xs, bs=1000):
     lsh.clear()
     n_iter = xs.size(0) // bs
     start_time = time.time()
@@ -69,33 +74,40 @@ def train(device, data, schedule, mi_type, args):
 
     estimates = []
     for batch_idx, MI in enumerate(schedule):
-        #t = 10 if batch_idx <= 1000 else 100
-        t=100
-        if batch_idx % t == 0:
-            build(lsh, model, xs)
-
         optimizer.zero_grad()
 
-        sdx_offset = (batch_idx // mi_range) * mi_range
-        sdx = torch.from_numpy(np.random.choice(mi_range, batch_size, replace=False) + sdx_offset).to(device)
-        #sdx = torch.from_numpy(np.random.choice(num_iterations, batch_size, replace=False)).to(device)
+        # randomly select data from data distribution
+        sdx_iter = (batch_idx // mi_range) * mi_range
+        sdx_offset = sdx_iter * batch_size
+        sdx = torch.from_numpy(np.random.choice(mi_range*batch_size, batch_size, replace=False) + sdx_offset).to(device)
+
+        t = 10 if batch_idx <= 1000 else 100
+        if batch_idx % t == 0:
+            # Load first section of desired size into lsh hash tables
+            lxs = xs[:desired_size, :]
+            assert(lxs.size(0) == desired_size)
+            build(lsh, model, lxs)
+
+            #lsh.stats()
+            # Full - Load All Data
+            #build(lsh, model, xs)
+
+        # embed data
         y = F.embedding(sdx, ys).detach()
-        px = torch.unsqueeze(F.embedding(sdx, xs), dim=1).detach()
-
-        #start = batch_idx * batch_size
-        #end = start + batch_size
-        #y = ys[start:end]
-        #px = torch.unsqueeze(xs[start:end], dim=1)
-
         ey = model.embed_y(y)
+
+        # for each data sample, query lsh data structure
         id_lists = list() 
         for idx in range(batch_size):
+            local_y = sdx[idx].item()
             local_ey = torch.unsqueeze(ey[idx,:], dim=0)
-            id_list = lsh.query(local_ey)
+            id_list = lsh.query_remove(local_ey, local_y)
             id_lists.append(id_list)
 
+        # find maximum number of samples
         max_size = functools.reduce(lambda x,y: max(x, len(y)), id_lists, 0)
 
+        # create matrix and pad appropriately
         id_tensors = list()
         for idx, id_list in enumerate(id_lists):
             remainder = max_size - len(id_list)
@@ -104,9 +116,11 @@ def train(device, data, schedule, mi_type, args):
             id_tensors.append(torch.unsqueeze(new_indices, dim=0))
         indices = torch.cat(id_tensors, dim=0)
 
+        # create mask distinguishing between samples and padding
         mask = 1.0 - torch.eq(indices, xs.size(0)).float()
-        mask = torch.cat([onet, mask], dim=1)
+        mask = torch.cat([bs_onet, mask], dim=1).detach()
 
+        px = torch.unsqueeze(F.embedding(sdx, xs), dim=1)
         nx = F.embedding(indices, zxs, padding_idx=xs.size(0))
         x = torch.cat([px, nx], dim=1).detach()
 
@@ -117,7 +131,7 @@ def train(device, data, schedule, mi_type, args):
 
         estimates.append(mi.item())
         if (batch_idx+1) % 100 == 0:
-            print('{} {} {} MI:{}, E_MI: {:.6f}'.format(mi_type.name, sdx_offset, batch_idx+1, MI, mi.item()))
+            print('{} {} MI:{}, E_MI: {:.6f}'.format(mi_type.name, batch_idx+1, MI, mi.item()))
             sys.stdout.flush()
     lsh.stats()
     return estimates
@@ -125,8 +139,7 @@ def train(device, data, schedule, mi_type, args):
 # Ground truth MI
 mi_true = mi_schedule(num_iterations)
 start_time = time.time()
-#data = generate_dataset(num_iterations, mi_true, d, batch_size)
-data = generate_dataset(num_iterations, mi_true, d, 1)
+data = generate_dataset(num_iterations, mi_true, d, batch_size)
 end_time = time.time()
 print("Data Built {:2f}".format(end_time - start_time))
 
@@ -151,7 +164,9 @@ axs = np.ravel(axs)
   
 for i, name in enumerate(names):
   plt.sca(axs[i])
-  plt.title(lnames[i])
+  #plt.title(lnames[i])
+  title = "{:s} - {:d}".format(lnames[i], batch_size)
+  plt.title(title)
 
   # Plot estimated MI and smoothed MI
   mis = estimates[name]  
@@ -179,9 +194,9 @@ for i, name in enumerate(names):
   plt.ylim(-1, 11)
   plt.xlim(0, num_iterations)
   if i == len(estimates) - ncols:
-    plt.xlabel('steps')
+    #plt.xlabel('steps')
     plt.ylabel('Mutual information (nats)')
-plt.legend(loc='best', fontsize=8, framealpha=0.0)
+#plt.legend(loc='best', fontsize=8, framealpha=0.0)
 fig = plt.gcf()
 fig.savefig(sys.argv[1])
 plt.close()

@@ -35,6 +35,15 @@ class LSH:
         fp = self.func.hash(items).int().cpu().numpy()
         self.lsh_.insert_multi(fp, N)
 
+    def query_remove(self, item, label):
+        fp = self.func.hash(item).int().cpu().numpy()
+        result = self.lsh_.query(np.squeeze(fp))
+        if label in result:
+            result.remove(label)
+        self.sample_size += len(result)
+        self.count += 1
+        return list(result)
+
     def query(self, item):
         fp = self.func.hash(item).int().cpu().numpy()
         result = list(self.lsh_.query(np.squeeze(fp)))

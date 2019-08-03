@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
+from mi_data import MI
+
 class MI_Estimator(nn.Module):
     def __init__(self, device, D, ED, HD):
         super(MI_Estimator, self).__init__()
