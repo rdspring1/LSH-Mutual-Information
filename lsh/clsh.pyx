@@ -13,6 +13,7 @@ cdef extern from "LSH.h":
         void insert_multi(int*, int) except +
         unordered_set[int] query(int*) except +
         unordered_set[int] query_multi(int*, int) except +
+        vector[unordered_set[int]] query_multiset(int*, int) except +
         void query_multi_mask(int*, float*, int, int) except +
         void clear()
 
@@ -50,48 +51,24 @@ cdef class pyLSH:
         return self.c_lsh.query_multi_mask(&fp[0, 0], &mask[0,0], M, N)
 
     @cython.boundscheck(False)
-    def accidental_match(self, np.ndarray[long, ndim=1, mode="c"] labels, set samples, int N):
-        for idx in range(N): 
-            if labels[idx] in samples:
-                samples.remove(labels[idx])
+    def query_matrix(self, np.ndarray[int, ndim=2, mode="c"] fp, np.ndarray[long, ndim=1, mode="c"] labels, int N, int total_size):
+        multiset = self.c_lsh.query_multiset(&fp[0, 0], N)
 
-    @cython.boundscheck(False)
-    def multi_label(self, np.ndarray[long, ndim=2, mode="c"] labels, set samples):
-        M = labels.shape[0]
-        K = labels.shape[1]
-        label2idx = dict()
-        label_list = list()
-        batch_prob = list()
+        cdef total_count = 0
+        cdef max_size = 0
+        cdef int local_label = 0
+        for idx in range(len(multiset)):
+            local_label = labels[idx]
+            multiset[idx].erase(local_label)
+            total_count += len(multiset[idx])
+            max_size = max(max_size, len(multiset[idx]))
 
-        # remove accidental hits from samples
-        # create label list
-        # create label to index dictionary
-        for idx in range(M): 
-            count = 0
-            for jdx in range(K): 
-                l = labels[idx, jdx]
-                if l == -1:
-                    break
-                elif l in samples:
-                    samples.remove(l)
-                count += 1
-                if l not in label2idx:
-                    label2idx[l] = len(label_list)
-                    label_list.append(l)
-            batch_prob.append(1.0 / count)
-
-        sample_list = label_list + list(samples)
-
-        # create probability distribution
-        result = np.zeros([M, len(sample_list)], dtype=np.float32)
-        for idx in range(M): 
-            for jdx in range(K): 
-                l = labels[idx, jdx]
-                if l == -1:
-                    break
-                else:
-                    result[idx, label2idx[l]] = batch_prob[idx]
-        return sample_list, result
+        np_lsh = np.zeros([N, max_size], dtype=np.int64)
+        np_lsh.fill(total_size)
+        for bdx, item in enumerate(multiset):
+            for ldx, index in enumerate(item):
+                np_lsh[bdx, ldx] = index
+        return np_lsh, total_count
 
     def clear(self):
         self.c_lsh.clear()

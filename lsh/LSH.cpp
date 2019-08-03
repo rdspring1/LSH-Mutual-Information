@@ -154,6 +154,23 @@ void LSH::retrieve_mask(const int* fp, float* mask, const int M, const int N, co
 	}
 }
 
+std::vector<std::unordered_set<int>> LSH::query_multiset(const int* fp, const int N)
+{
+        std::vector<std::unordered_set<int>> results;
+	int offset = -1;
+	for(int idx = 0; idx < N; ++idx)
+	{
+	        std::unordered_set<int> local_result;
+		for(int jdx = 0; jdx < L; ++jdx)
+		{
+			retrieve(local_result, jdx, fp[++offset]);
+		}
+	        local_result.erase(-1);
+                results.push_back(local_result);
+	}
+	return results;
+}
+
 void LSH::clear()
 {
 	counter = 0;

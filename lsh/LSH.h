@@ -28,6 +28,7 @@ class LSH
 		void insert_multi(const int*, const int);
 		std::unordered_set<int> query(const int*);
 		std::unordered_set<int> query_multi(const int*, const int);
+		std::vector<std::unordered_set<int>> query_multiset(const int*, const int);
 		void query_multi_mask(const int*, float*, const int, const int);
 		void clear();
 };

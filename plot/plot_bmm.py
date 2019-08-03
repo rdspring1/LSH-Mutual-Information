@@ -25,7 +25,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-batch_size = 100
+batch_size = 10
 num_iterations = 20000
 total_size = num_iterations * batch_size
 mi_range = num_iterations // 5
@@ -96,25 +96,11 @@ def train(device, data, schedule, mi_type, args):
         y = F.embedding(sdx, ys).detach()
         ey = model.embed_y(y)
 
-        # for each data sample, query lsh data structure
-        id_lists = list() 
-        for idx in range(batch_size):
-            local_y = sdx[idx].item()
-            local_ey = torch.unsqueeze(ey[idx,:], dim=0)
-            id_list = lsh.query_remove(local_ey, local_y)
-            id_lists.append(id_list)
-
+        # for each data sample, query lsh data structure, remove accidental hit
         # find maximum number of samples
-        max_size = functools.reduce(lambda x,y: max(x, len(y)), id_lists, 0)
-
         # create matrix and pad appropriately
-        id_tensors = list()
-        for idx, id_list in enumerate(id_lists):
-            remainder = max_size - len(id_list)
-            local_indices = torch.LongTensor(id_list).to(device)
-            new_indices = F.pad(local_indices, pad=(0, remainder), mode='constant', value=xs.size(0))
-            id_tensors.append(torch.unsqueeze(new_indices, dim=0))
-        indices = torch.cat(id_tensors, dim=0)
+        np_indices = lsh.query_remove_matrix(ey, sdx, xs.size(0))
+        indices = torch.from_numpy(np_indices).to(device)
 
         # create mask distinguishing between samples and padding
         mask = 1.0 - torch.eq(indices, xs.size(0)).float()
@@ -180,7 +166,7 @@ for i, name in enumerate(names):
   estimator = estimators[name]['mi_type']
   # Add theoretical upper bound lines
   if estimator == MI.INTERPOLATE:
-      log_alpha = -np.log( 1+ tf.exp(-estimators[name]['alpha_logit']))
+      log_alpha = -np.log( 1. + np.exp(-estimators[name]['args']['alpha']))
       plt.axhline(1 + np.log(batch_size) - log_alpha, c='k', linestyle='--', label=r'1 + log(K/$\alpha$)' )
   elif estimator == MI.NCE:
       log_alpha = 1.
